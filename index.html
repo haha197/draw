@@ -1,38 +1,144 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-  <head>
-    <meta charset="UTF-8" />
-    <title>即時多人畫板 (Supabase Broadcast)</title>
+<head>
+    <meta charset="UTF-8">
+    <title>即時多人畫板</title>
     <style>
-      body {
-        margin: 0;
-        overflow: hidden;
-        font-family: sans-serif;
-      }
-      #controls {
-        position: absolute;
-        top: 10;
-        left: 10;
-        background: rgba(255, 255, 255, 0.8);
-        padding: 10px;
-        border-radius: 8px;
-      }
-      canvas {
-        cursor: crosshair;
-        display: block;
-      }
+        body, html { margin: 0; padding: 0; overflow: hidden; background-color: #e9ecef; font-family: sans-serif; }
+        #controls { position: absolute; top: 15px; left: 15px; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 10; }
+        h3 { margin: 0 0 10px 0; font-size: 18px; }
+        label { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        button { padding: 6px 12px; cursor: pointer; }
+        canvas { cursor: crosshair; display: block; background: white; width: 100vw; height: 100vh; }
     </style>
-  </head>
-  <body>
-    <div id="controls">
-      <h3>多人實時畫板</h3>
-      <input type="color" id="colorPicker" value="#000000" />
-      <button id="clearBtn">清除我的畫布</button>
-    </div>
+</head>
+<body>
 
-    <canvas id="whiteboard"></canvas>
+<div id="controls">
+    <h3>多人實時畫板</h3>
+    <label>畫筆顏色: <input type="color" id="colorPicker" value="#000000"></label>
+    <button id="clearBtn">清除本地畫布</button>
+    <p id="status" style="margin-top: 10px; font-size: 13px; font-weight: bold; color: #555;">連線狀態: 初始化中...</p>
+</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js"></script>
-  </body>
+<canvas id="whiteboard"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+    // ==========================================
+    // 1. 填入你的 Supabase 憑證 (請替換為你的真實資料)
+    // ==========================================
+    const SUPABASE_URL = 'https://yjgctujlqebbnsbkguke.supabase.co'; 
+    const SUPABASE_KEY = 'sb_publishable_Cm-cXMLUshA1ppRXwcrytA_jblbiyGH';
+
+    // ==========================================
+    // 2. 初始化 Supabase
+    // ==========================================
+    const { createClient } = supabase;
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // ==========================================
+    // 3. 畫布與 DOM 設置
+    // ==========================================
+    const canvas = document.getElementById('whiteboard');
+    const ctx = canvas.getContext('2d');
+    const colorPicker = document.getElementById('colorPicker');
+    const clearBtn = document.getElementById('clearBtn');
+    const statusText = document.getElementById('status');
+
+    // 確保畫布尺寸與視窗一致
+    function resizeCanvas() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas(); // 初始化尺寸
+
+    let drawing = false;
+    let lastPos = { x: 0, y: 0 };
+
+    // ==========================================
+    // 4. Supabase Broadcast 邏輯
+    // ==========================================
+    // 建立頻道，設定 self: false (不接收自己畫的線)
+    const channel = supabaseClient.channel('drawing_room', {
+        config: { broadcast: { self: false } }
+    });
+
+    // 監聽來自他人的廣播事件
+    channel.on('broadcast', { event: 'draw' }, (payload) => {
+        const { from, to, color } = payload.payload;
+        drawLine(from, to, color, false); // false 代表這是別人畫的，不要再廣播出去
+    });
+
+    // 訂閱頻道並更新 UI 連線狀態
+    channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+            statusText.innerText = '連線狀態: 已連接 🟢';
+            statusText.style.color = '#28a745';
+        } else {
+            statusText.innerText = '連線狀態: ' + status + ' 🔴';
+            statusText.style.color = '#dc3545';
+        }
+    });
+
+    // ==========================================
+    // 5. 繪圖核心邏輯
+    // ==========================================
+    function drawLine(from, to, color, isLocal = true) {
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+        ctx.closePath();
+
+        // 如果是自己畫的，就把座標廣播給其他人
+        if (isLocal) {
+            channel.send({
+                type: 'broadcast',
+                event: 'draw',
+                payload: { from, to, color }
+            }).catch(err => console.error("廣播失敗:", err));
+        }
+    }
+
+    // 取得精確的滑鼠座標
+    function getMousePos(e) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top
+        };
+    }
+
+    // ==========================================
+    // 6. 監聽滑鼠事件
+    // ==========================================
+    canvas.addEventListener('mousedown', (e) => {
+        drawing = true;
+        lastPos = getMousePos(e);
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (!drawing) return;
+        const currentPos = getMousePos(e);
+        const color = colorPicker.value;
+        
+        drawLine(lastPos, currentPos, color, true); // true 代表是本地繪圖，需要廣播
+        lastPos = currentPos;
+    });
+
+    window.addEventListener('mouseup', () => { drawing = false; });
+    window.addEventListener('mouseout', () => { drawing = false; });
+
+    // 清除本地畫布
+    clearBtn.addEventListener('click', () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    });
+</script>
+</body>
 </html>
