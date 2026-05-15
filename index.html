@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <title>即時多人畫板 (Supabase Broadcast)</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        font-family: sans-serif;
+      }
+      #controls {
+        position: absolute;
+        top: 10;
+        left: 10;
+        background: rgba(255, 255, 255, 0.8);
+        padding: 10px;
+        border-radius: 8px;
+      }
+      canvas {
+        cursor: crosshair;
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="controls">
+      <h3>多人實時畫板</h3>
+      <input type="color" id="colorPicker" value="#000000" />
+      <button id="clearBtn">清除我的畫布</button>
+    </div>
+
+    <canvas id="whiteboard"></canvas>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
